@@ -106,6 +106,7 @@ function ongletAuth(o) {
 }
 async function connexion(e) {
   e.preventDefault();
+  demanderNotifPendantGeste();
   $('l-err').textContent = '';
   try {
     const r = await api('/login', { method: 'POST', body: { identifiant: $('l-id').value, password: $('l-mdp').value } });
@@ -114,6 +115,7 @@ async function connexion(e) {
 }
 async function inscription(e) {
   e.preventDefault();
+  demanderNotifPendantGeste();
   $('i-err').textContent = '';
   try {
     const r = await api('/inscription', { method: 'POST', body: {
@@ -122,6 +124,7 @@ async function inscription(e) {
   } catch (err) { $('i-err').textContent = err.message; }
 }
 function deconnexion() {
+  desactiverPush();
   token = null; moi = null;
   STOCK.ecrire('ghanja-token', null);
   fermer();
@@ -138,6 +141,7 @@ async function demarrer(t) {
   $('app').classList.remove('hidden');
   if (!location.hash) location.hash = '#/' + pages()[0][0];
   await afficher();
+  activerPushAuto();
 }
 async function rafraichirMoi() {
   [moi, CAT] = await Promise.all([api('/moi'), api('/catalogue')]);
@@ -242,6 +246,7 @@ RENDU.accueil = async () => {
   $('page').innerHTML = `
     <h1>Bonjour ${esc(moi.nom.split(' ')[0])} 🌸</h1>
     <p class="muted">Bienvenue chez El Ghanja, votre espace beauté à Gabès.</p>
+    ${cartePush()}
     ${bannieresPromo()}
     ${carteFidelite(moi.fidelite)}
     <div class="carte">
@@ -759,9 +764,9 @@ async function statut(type, id, s, question) {
 // ----- Notifications -----
 RENDU.notifications = async () => {
   await chargerNotifs();
-  $('page').innerHTML = NOTIFS.length
+  $('page').innerHTML = cartePush() + (NOTIFS.length
     ? NOTIFS.map(n => `<div class="notif ${n.lue ? '' : 'nouvelle'}"><b>${esc(n.titre)}</b>${esc(n.message)}<div class="small muted">${dateHeure(n.created_at)}</div></div>`).join('')
-    : vide('🔔', 'Aucune notification.');
+    : vide('🔔', 'Aucune notification.'));
   if (NOTIFS.some(n => !n.lue)) {
     await api('/notifications/lues', { method: 'POST' });
     $('nb-notifs').classList.add('hidden');
@@ -771,6 +776,7 @@ RENDU.notifications = async () => {
 // ----- Profil -----
 RENDU.profil = async () => {
   $('page').innerHTML = `
+    ${cartePush()}
     <div class="carte">
       <h3>Mes informations</h3>
       <p class="muted small">${moi.role === 'cliente' ? `Téléphone (identifiant) : <b>${esc(moi.telephone || '')}</b>` : `Identifiant : <b>${esc(moi.email || '')}</b>`}</p>
@@ -898,6 +904,7 @@ RENDU.planning = async () => {
   $('page').innerHTML = `
     <h1>Bonjour ${esc(prenom(moi.nom))} 🌸</h1>
     <p class="muted">Vos spécialités : ${(moi.specialites || []).map(esc).join(' · ') || '—'}</p>
+    ${cartePush()}
     <div class="row" style="margin-bottom:12px">
       <button class="btn btn-sm" onclick="PL.date=ajouterJours(PL.date,-1);recharger()">‹</button>
       <input type="date" style="max-width:200px" value="${PL.date}" onchange="PL.date=this.value;recharger()">
@@ -988,6 +995,7 @@ RENDU.tableau = async () => {
   $('page').innerHTML = `
     <h1>Bonjour Safa 🌸</h1>
     <p class="muted">${dateLongue(CAT.aujourdhui)}</p>
+    ${cartePush()}
     <div class="stats">
       <a class="stat" href="#/agenda"><div class="val">${s.rdv_jour}</div><div class="lib">Rendez-vous aujourd'hui</div></a>
       <a class="stat ${s.rdv_attente ? 'alerte' : ''}" href="#/agenda"><div class="val">${s.rdv_attente}</div><div class="lib">Rendez-vous à confirmer</div></a>
@@ -1477,8 +1485,130 @@ async function sauverReglages(btn) {
   btn.disabled = false;
 }
 
+// ================= APPLICATION SUR LE TÉLÉPHONE =================
+// Installation (écran d'accueil Android / iPhone) et notifications dans la barre du téléphone, même application fermée.
+// iPhone : seulement depuis l'icône de l'écran d'accueil (ajoutée avec Safari), iOS 16.4 ou plus récent.
+const estInstallee = matchMedia('(display-mode: standalone)').matches || navigator.standalone === true;
+const estIOS = /iphone|ipad|ipod/i.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+let invitationInstall = null;   // installation directe proposée par Chrome (Android, ordinateur)
+
+if ('serviceWorker' in navigator) {
+  navigator.serviceWorker.register('sw.js').catch(() => { /* site sans HTTPS : pas d'installation ni de notifications */ });
+  // Notification touchée alors que l'application était ouverte
+  navigator.serviceWorker.addEventListener('message', e => { if (e.data && e.data.ouvrir && moi) aller(e.data.ouvrir); });
+}
+window.addEventListener('beforeinstallprompt', e => { e.preventDefault(); invitationInstall = e; });
+window.addEventListener('appinstalled', () => { invitationInstall = null; toast('✔ El Ghanja est installée sur ce téléphone'); });
+
+const ICONE_PARTAGE = `<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-3px"><path d="M12 3v12M7 8l5-5 5 5"/><path d="M5 12v7a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-7"/></svg>`;
+async function installer() {
+  if (invitationInstall) {
+    invitationInstall.prompt();
+    await invitationInstall.userChoice.catch(() => null);
+    invitationInstall = null;
+    return;
+  }
+  const etape = (n, t) => `<li><span class="gi-num">${n}</span><span>${t}</span></li>`;
+  ouvrir('📲 Installer El Ghanja', estIOS ? `
+    <ol class="guide-install">
+      ${etape(1, 'Ouvrez ce site dans <b>Safari</b>')}
+      ${etape(2, `Touchez <b>Partager</b> ${ICONE_PARTAGE} en bas de l'écran <span class="muted small">(iOS 26 : bouton ⋯ puis Partager)</span>`)}
+      ${etape(3, 'Choisissez <b>« Sur l\'écran d\'accueil »</b>, puis <b>Ajouter</b>')}
+      ${etape(4, 'Ouvrez El Ghanja depuis la nouvelle icône 🌸 et activez les notifications')}
+    </ol>
+    <p class="small muted">Sur iPhone, les notifications arrivent seulement dans l'application ajoutée à l'écran d'accueil (iOS 16.4 ou plus récent).</p>` : `
+    <ol class="guide-install">
+      ${etape(1, 'Ouvrez ce site dans <b>Chrome</b>')}
+      ${etape(2, 'Touchez le menu <b>⋮</b> en haut à droite')}
+      ${etape(3, 'Choisissez <b>« Installer l\'application »</b> (ou « Ajouter à l\'écran d\'accueil »)')}
+      ${etape(4, 'Ouvrez El Ghanja depuis la nouvelle icône 🌸 et activez les notifications')}
+    </ol>`);
+}
+
+let pushCle = null;      // adresse Web Push de ce téléphone (pour le délier à la déconnexion)
+let pushActif = false;   // abonnement enregistré sur le serveur
+let demandeNotif = null;
+// 'web' | 'ios-installer' (iPhone, pas encore sur l'écran d'accueil) | null (navigateur trop ancien)
+function modePush() {
+  if ('serviceWorker' in navigator && 'PushManager' in window && 'Notification' in window) return 'web';
+  return estIOS && !estInstallee ? 'ios-installer' : null;
+}
+function base64EnOctets(b64) {
+  const s = atob((b64 + '='.repeat((4 - b64.length % 4) % 4)).replace(/-/g, '+').replace(/_/g, '/'));
+  return Uint8Array.from(s, c => c.charCodeAt(0));
+}
+// silencieux : à l'ouverture de session, sans rien demander (relie ce téléphone au compte connecté)
+async function activerPush(silencieux) {
+  if (modePush() !== 'web') return rafraichirCartePush();
+  try {
+    const permission = silencieux ? Notification.permission : await Notification.requestPermission();
+    if (permission !== 'granted') {
+      if (!silencieux) toast('Notifications refusées : autorisez-les dans les réglages du téléphone.', true);
+      return rafraichirCartePush();
+    }
+    const { clePublique } = await api('/push');
+    const reg = await navigator.serviceWorker.ready;
+    let abo = await reg.pushManager.getSubscription();
+    if (!abo) abo = await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: base64EnOctets(clePublique) });
+    await api('/push/abonnement', { method: 'POST', body: { abonnement: abo.toJSON() } });
+    pushCle = abo.endpoint;
+    pushActif = true;
+    if (!silencieux) toast('🔔 Notifications activées sur ce téléphone ✔');
+  } catch (e) {
+    if (!silencieux) toast('Activation impossible : ' + e.message, true);
+  }
+  rafraichirCartePush();
+}
+// Le téléphone n'affiche la question « Autoriser les notifications ? » que juste après un appui :
+// on la pose en touchant « Se connecter » / « Créer mon compte »
+function demanderNotifPendantGeste() {
+  if (modePush() === 'web' && Notification.permission === 'default' && !demandeNotif)
+    demandeNotif = Notification.requestPermission().catch(() => 'default');
+}
+async function activerPushAuto() {
+  if (demandeNotif) { await demandeNotif; demandeNotif = null; }
+  await activerPush(true);
+}
+function desactiverPush() {
+  const cle = pushCle;
+  pushCle = null; pushActif = false;
+  if (cle && token) api('/push/abonnement', { method: 'DELETE', body: { cle } }).catch(() => {});
+}
+async function testerPush() {
+  await essayer(async () => {
+    await api('/push/test', { method: 'POST' });
+    toast('Notification de test envoyée : regardez la barre du téléphone 📲');
+  });
+}
+// Carte « Notifications sur ce téléphone » (accueil, planning, tableau de bord, notifications, profil)
+const cartePush = () => `<div id="carte-push">${htmlCartePush()}</div>`;
+function rafraichirCartePush() { const c = $('carte-push'); if (c) c.innerHTML = htmlCartePush(); }
+function htmlCartePush() {
+  const mode = modePush();
+  const installer = estInstallee ? '' : '<button class="btn btn-sm" onclick="installer()">📲 Installer l\'application</button>';
+  if (mode === 'ios-installer') return `<div class="carte-push">
+    <b>🔔 Recevez vos notifications sur l'iPhone</b>
+    <span class="small">Installez d'abord l'application sur l'écran d'accueil, puis ouvrez-la depuis l'icône.</span>
+    <div class="row"><button class="btn btn-primary btn-sm" onclick="installer()">📲 Comment installer ?</button></div></div>`;
+  if (!mode) return installer ? `<div class="carte-push"><b>📲 El Ghanja sur votre téléphone</b><div class="row">${installer}</div></div>` : '';
+  if (Notification.permission === 'denied') return `<div class="carte-push">
+    <b>🔕 Notifications bloquées sur ce téléphone</b>
+    <span class="small">Autorisez-les dans les réglages du téléphone (Notifications → El Ghanja, ou Chrome), puis revenez ici.</span>
+    <div class="row">${installer}</div></div>`;
+  if (Notification.permission === 'granted' && pushActif) return `<div class="carte-push actif">
+    <span>🔔 Notifications activées sur ce téléphone</span>
+    <div class="row"><button class="btn btn-sm" onclick="testerPush()">Tester</button>${installer}</div></div>`;
+  return `<div class="carte-push">
+    <b>🔔 Activez les notifications sur ce téléphone</b>
+    <span class="small">Confirmations, rappels d'avance, cadeaux et promotions arrivent même quand l'application est fermée.</span>
+    <div class="row"><button class="btn btn-primary btn-sm" onclick="activerPush(false)">Activer</button>${installer}</div></div>`;
+}
+
 // ================= DÉMARRAGE =================
 $('contacts-auth').innerHTML = htmlContacts();
+if (!estInstallee) $('btn-installer').classList.remove('hidden');
+// Comptes de démonstration : affichés seulement sur l'ordinateur de développement
+if (!['localhost', '127.0.0.1'].includes(location.hostname)) document.querySelector('.demo').remove();
 $('adresse-auth').textContent = '📍 ' + CONTACT.adresse;
 (async () => {
   if (token) {

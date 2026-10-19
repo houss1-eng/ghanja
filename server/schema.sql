@@ -223,3 +223,14 @@ ALTER TABLE users ADD COLUMN IF NOT EXISTS actif BOOLEAN NOT NULL DEFAULT true;
 ALTER TABLE users ADD COLUMN IF NOT EXISTS photo_id UUID REFERENCES fichiers(id) ON DELETE SET NULL;
 ALTER TABLE reservations ADD COLUMN IF NOT EXISTS employe_id INTEGER REFERENCES users(id) ON DELETE SET NULL;
 CREATE INDEX IF NOT EXISTS reservations_employe ON reservations (employe_id, date);
+
+-- ================= NOTIFICATIONS SUR LE TÉLÉPHONE (Web Push) =================
+-- Un téléphone (ou navigateur) abonné = une ligne. Les clés VAPID sont dans « parametres ».
+CREATE TABLE IF NOT EXISTS push_abonnements (
+  id         SERIAL PRIMARY KEY,
+  user_id    INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  cle        TEXT NOT NULL UNIQUE,                     -- adresse Web Push du téléphone
+  donnees    JSONB NOT NULL,                           -- abonnement complet (clés de chiffrement)
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS push_abonnements_user ON push_abonnements (user_id);

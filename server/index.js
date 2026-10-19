@@ -15,6 +15,7 @@ import { fileURLToPath } from 'node:url';
 import { q, transaction, parametre, definirParametre } from './db.js';
 import { initialiser, FIDELITE, HORAIRES, LOCATION } from './seed.js';
 import * as mail from './mail.js';
+import * as push from './push.js';
 
 const SECRET = process.env.JWT_SECRET;
 if (!SECRET) throw new Error('JWT_SECRET manquant dans server/.env');
@@ -63,8 +64,22 @@ const admin = (req, res, next) =>
 const estAdmin = req => req.user.role === 'admin';
 
 const jeton = u => jwt.sign({ id: u.id }, SECRET, { expiresIn: '30d' });
-const notifier = (userId, type, titre, message = '', qq = q) =>
-  qq('INSERT INTO notifications (user_id, type, titre, message) VALUES ($1, $2, $3, $4)', [userId, type, titre, message]);
+// Notification dans l'application + sur le téléphone (userId null : toutes les clientes)
+async function notifier(userId, type, titre, message = '', qq = q) {
+  const [n] = await qq('INSERT INTO notifications (user_id, type, titre, message) VALUES ($1, $2, $3, $4) RETURNING id',
+    [userId, type, titre, message]);
+  // Envoi sur le téléphone après la fin de la transaction : si elle a été annulée, la notification n'existe plus → rien
+  setTimeout(async () => {
+    try {
+      const [existe] = await q('SELECT 1 FROM notifications WHERE id = $1', [n.id]);
+      if (existe) await push.pousser(userId == null ? 'clientes' : [userId], { titre, texte: message, type });
+    } catch (e) { console.error('⚠ Notification téléphone :', e.message); }
+  }, 1500);
+}
+// À l'administration (Safa) : nouvelle réservation, commande, demande de location ou d'achat
+async function notifierAdmins(type, titre, message, qq = q) {
+  for (const a of await qq("SELECT id FROM users WHERE role = 'admin' AND actif")) await notifier(a.id, type, titre, message, qq);
+}
 
 // ================= RÉGLAGES, PROMOTIONS, FIDÉLITÉ =================
 const reglages = async () => ({
@@ -466,6 +481,8 @@ app.post('/api/reservations', auth, async (req, res) => {
       await notifier(clientId, 'reservation', '📅 Rendez-vous confirmé', `${s.nom} le ${date} à ${heure}.`, tq);
     if (employeId && employeId !== req.user.id)
       await notifier(employeId, 'reservation', '📅 Nouveau rendez-vous', `${s.nom} le ${date} à ${heure}.`, tq);
+    if (!estAdmin(req))
+      await notifierAdmins('reservation', '📅 Nouvelle réservation à confirmer', `${req.user.nom} : ${s.nom} le ${date} à ${heure}.`, tq);
     return r;
   });
   const [r] = await q(`${SELECT_RESA} WHERE r.id = $1`, [resa.id]);
@@ -535,6 +552,8 @@ app.post('/api/commandes', auth, async (req, res) => {
       total += prix * quantite;
     }
     await tq('UPDATE commandes SET total = $2 WHERE id = $1', [cmd.id, arrondi(total)]);
+    if (!estAdmin(req))
+      await notifierAdmins('commande', '🛍️ Nouvelle commande', `${req.user.nom} : commande n° ${cmd.id} (${arrondi(total)} DT) à préparer.`, tq);
     return cmd.id;
   });
   const [c] = await q(`${SELECT_CMD} WHERE c.id = $1`, [id]);
@@ -665,6 +684,8 @@ app.post('/api/locations', auth, async (req, res) => {
         `Versez l’avance de ${avanceDe(total, avancePct)} DT au centre avant ${quand(l.expire_le)} pour la réserver. `
         + 'Attention : d’autres clientes peuvent demander le même modèle, la première qui verse l’avance l’obtient. '
         + 'Sans avance dans le délai, la demande est annulée.', tq);
+      await notifierAdmins('location', `👗 Demande de location : ${a.nom}`,
+        `${req.user.nom} (${req.user.telephone || ''}) : du ${date_debut} au ${date_fin}. Avance de ${avanceDe(total, avancePct)} DT attendue avant ${quand(l.expire_le)}.`, tq);
     }
     return l.id;
   });
@@ -777,6 +798,7 @@ app.post('/api/achats', auth, async (req, res) => {
     const [h] = await tq(`INSERT INTO achats_articles (client_id, article_id, prix, statut) VALUES ($1, $2, $3, $4) RETURNING id`,
       [clientId, a.id, a.prix_vente, estAdmin(req) ? 'confirmee' : 'demandee']);
     if (estAdmin(req)) await marquerVendu(tq, a.id, a.nom);
+    else await notifierAdmins('achat', `🛍️ Demande d’achat : ${a.nom}`, `${req.user.nom} (${req.user.telephone || ''}) : ${a.prix_vente} DT, à confirmer.`, tq);
     return h.id;
   });
   const [h] = await q(`${SELECT_ACHAT} WHERE h.id = $1`, [id]);
@@ -919,6 +941,27 @@ app.put('/api/reglages', auth, admin, async (req, res) => {
 });
 
 // ================= ERREURS & DÉMARRAGE =================
+// ================= NOTIFICATIONS SUR LE TÉLÉPHONE =================
+app.get('/api/push', auth, (req, res) => res.json({ clePublique: push.cle() }));
+app.post('/api/push/abonnement', auth, async (req, res) => {
+  const a = req.body.abonnement || {};
+  if (!String(a.endpoint || '').startsWith('https://') || !a.keys || !a.keys.p256dh || !a.keys.auth)
+    throw new Erreur(400, 'Abonnement invalide.');
+  await push.abonner(req.user.id, { endpoint: String(a.endpoint).slice(0, 1000), keys: { p256dh: String(a.keys.p256dh), auth: String(a.keys.auth) } });
+  res.status(201).json({ ok: true });
+});
+app.delete('/api/push/abonnement', auth, async (req, res) => {
+  await push.desabonner(req.user.id, String(req.body.cle || ''));
+  res.json({ ok: true });
+});
+app.post('/api/push/test', auth, async (req, res) => {
+  const n = await push.pousser([req.user.id], { titre: 'El Ghanja 🌸', texte: '✅ Les notifications arrivent bien sur ce téléphone.', type: 'test' });
+  if (!n) throw new Erreur(400, 'Aucun téléphone abonné pour ce compte : activez d’abord les notifications.');
+  res.json({ ok: true, envoyes: n });
+});
+// Pour l'hébergeur (Render) : le serveur et la base répondent
+app.get('/api/sante', async (req, res) => { await q('SELECT 1'); res.json({ ok: true }); });
+
 app.use('/api', (req, res) => res.status(404).json({ erreur: 'Adresse inconnue.' }));
 app.use((err, req, res, next) => {
   if (err instanceof Erreur) return res.status(err.status).json({ erreur: err.message });
@@ -930,6 +973,7 @@ app.use((err, req, res, next) => {
 });
 
 await initialiser();
+await push.initialiserPush();
 const surveiller = () => surveillerDemandes().catch(e => console.error('⚠ Demandes de location :', e.message));
 surveiller();
 setInterval(surveiller, 60e3);

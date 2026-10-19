@@ -47,6 +47,28 @@ Remettre les données de démonstration : `npm run seed -- --reset` (efface tout
 Illustrations des soins : `server/photos-demo/` (aux couleurs du logo, redessinées par `node photos-demo/dessiner.mjs`).
 `npm run seed -- --photos` les ajoute aux soins qui n'ont pas encore de photo, sans toucher aux photos de Safa.
 
+## Sur le téléphone (Android & iPhone) et notifications
+
+L'application s'installe comme une vraie application (icône El Ghanja sur l'écran d'accueil) et reçoit les
+notifications dans la barre du téléphone, même fermée (Web Push) :
+
+- **Android** : ouvrir le site dans Chrome → « Installer l'application » (bouton sur la page de connexion).
+- **iPhone** (iOS 16.4+) : ouvrir le site dans Safari → Partager → « Sur l'écran d'accueil », puis ouvrir l'app
+  depuis l'icône et toucher « Activer » les notifications.
+
+Notifications envoyées : confirmations et annulations, rappels d'avance, cadeau fidélité, commande prête,
+promotions (toutes les clientes) ; à Safa : nouvelle réservation, commande, demande de location ou d'achat ;
+à l'équipe : nouveau rendez-vous.
+
+Il faut que le site soit en ligne en **HTTPS** (sur l'ordinateur, http://localhost suffit pour essayer).
+
+## Mise en ligne (Render + Neon)
+
+1. Base Neon : copier son URL de connexion.
+2. Sur https://render.com : New → Blueprint → choisir le dépôt GitHub → coller `DATABASE_URL`.
+3. Au premier démarrage, les tables et les données de démonstration sont créées si la base est vide.
+   **Changer tout de suite le mot de passe `1234` du compte administration** (Profil).
+
 ## Configuration
 
 - `.env` (racine) : mot de passe PostgreSQL du `docker-compose.yml`.

@@ -6,7 +6,7 @@ import { fileURLToPath } from 'node:url';
 import bcrypt from 'bcryptjs';
 import { pool, q, definirParametre } from './db.js';
 
-const TABLES = `categories_articles, achats_articles, realisations, notifications_lues, notifications, locations, articles_location, commande_lignes, commandes,
+const TABLES = `push_abonnements, categories_articles, achats_articles, realisations, notifications_lues, notifications, locations, articles_location, commande_lignes, commandes,
   produits, reservations, promotions, services, users, fichiers, parametres`;
 
 // Réglages par défaut : modifiables dans « Réglages » (administration)
