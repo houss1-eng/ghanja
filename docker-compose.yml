@@ -1,0 +1,31 @@
+# Base de données PostgreSQL de El Ghanja – Safa Make-up Artist (+ Mailpit pour voir les emails des promotions)
+#   Mot de passe : fichier .env à la racine (POSTGRES_PASSWORD=..., non versionné)
+#   Démarrer : docker compose up -d
+#   Arrêter  : docker compose down        (les données sont conservées dans le volume)
+# Port 5437 sur le PC (5432 à 5436 sont déjà utilisés par d'autres projets)
+# Mailpit : SMTP sur 1026, boîte de réception sur http://localhost:8026 (1025/8025 pris par « cabinet »)
+name: ghanja
+services:
+  db:
+    image: postgres:16-alpine
+    container_name: ghanja-db
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ghanja
+      POSTGRES_USER: ghanja
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Definir POSTGRES_PASSWORD dans le fichier .env}
+    ports:
+      - "5437:5432"
+    volumes:
+      - ghanja-data:/var/lib/postgresql/data
+
+  mailpit:
+    image: axllent/mailpit:v1.20
+    container_name: ghanja-mailpit
+    restart: unless-stopped
+    ports:
+      - "1026:1025"
+      - "8026:8025"
+
+volumes:
+  ghanja-data:

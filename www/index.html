@@ -1,0 +1,91 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+  <meta name="theme-color" content="#fcd8da">
+  <title>El Ghanja – Safa Make-up Artist</title>
+  <link rel="icon" type="image/png" href="img/icone.png">
+  <link rel="apple-touch-icon" href="img/icone.png">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Jost:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+  <!-- ================= CONNEXION / INSCRIPTION ================= -->
+  <section id="auth" class="auth hidden">
+    <div class="auth-photo" aria-hidden="true"></div>
+    <div class="auth-droite">
+      <div class="auth-card">
+        <div class="logo">
+          <img src="img/logo.png" alt="El Ghanja">
+          <div class="signature">Safa Make-up Artist</div>
+        </div>
+
+        <div class="formulaire">
+          <div class="onglets">
+            <button id="onglet-login" class="actif" onclick="ongletAuth('login')">Connexion</button>
+            <button id="onglet-inscription" onclick="ongletAuth('inscription')">Créer un compte</button>
+          </div>
+
+          <form id="form-login" onsubmit="connexion(event)">
+            <label for="l-id">Numéro de téléphone ou email</label>
+            <input id="l-id" required autocomplete="username" autocapitalize="off" placeholder="26 972 623">
+            <label for="l-mdp">Mot de passe</label>
+            <input id="l-mdp" type="password" required autocomplete="current-password" placeholder="••••">
+            <p class="error" id="l-err"></p>
+            <button class="btn btn-primary btn-block">Se connecter</button>
+          </form>
+
+          <form id="form-inscription" class="hidden" onsubmit="inscription(event)">
+            <label for="i-nom">Nom et prénom</label>
+            <input id="i-nom" required autocomplete="name">
+            <label for="i-tel">Téléphone</label>
+            <input id="i-tel" required inputmode="tel" autocomplete="tel" placeholder="20 100 200">
+            <label for="i-email">Email <span class="muted small">(pour recevoir les promotions)</span></label>
+            <input id="i-email" type="email" autocomplete="email">
+            <label for="i-mdp">Mot de passe</label>
+            <input id="i-mdp" type="password" required minlength="4" autocomplete="new-password">
+            <p class="error" id="i-err"></p>
+            <button class="btn btn-primary btn-block">Créer mon compte</button>
+          </form>
+
+          <div class="demo">
+            <b>Comptes de démonstration</b> (mot de passe <b>1234</b>)<br>
+            Cliente : 20 100 200 · Administration : admin@elghanja.tn
+          </div>
+        </div>
+
+        <div class="contacts" id="contacts-auth"></div>
+        <p class="adresse" id="adresse-auth"></p>
+      </div>
+    </div>
+  </section>
+
+  <!-- ================= APPLICATION ================= -->
+  <div id="app" class="app hidden">
+    <nav class="menu">
+      <div class="logo">
+        <img src="img/logo.png" alt="El Ghanja">
+        <div class="signature">Safa Make-up Artist</div>
+      </div>
+      <div id="menu-liens"></div>
+      <a href="#" onclick="deconnexion(); return false" style="margin-top:20px"><span class="ico">🚪</span>Déconnexion</a>
+    </nav>
+    <main class="contenu">
+      <header class="entete">
+        <span class="entete-logo"><img src="img/logo.png" alt="El Ghanja"></span>
+        <h2 id="titre-page"></h2>
+        <button class="cloche" onclick="aller('notifications')" aria-label="Notifications">🔔<span id="nb-notifs" class="pastille hidden"></span></button>
+      </header>
+      <div id="page" class="page"></div>
+    </main>
+    <nav class="nav-bas" id="nav-bas"></nav>
+  </div>
+
+  <div id="fenetre"></div>
+  <script src="app.js"></script>
+</body>
+</html>
